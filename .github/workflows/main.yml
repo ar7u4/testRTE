@@ -17,11 +17,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
-      - name: Install AWS CLI
-        run: |
-          sudo apt-get update
-          sudo apt-get install awscli
-
       - name: Deploy Lambda functions
         if: contains(github.event.commits[0].modified, 'Lambda_functions/')
         run: |
@@ -56,3 +51,9 @@ jobs:
               --function-name "$function_name" \
               --layers "$layer_version"
           done
+          
+      - name: Debug Output
+        run: |
+          echo "Modified Files: ${{ github.event.commits[0].modified }}"
+          echo "Changes in Lambda Functions: ${{ steps.lambda_changes.outputs.changes }}"
+          echo "Changes in Layer: ${{ steps.layer_changes.outputs.changes }}"

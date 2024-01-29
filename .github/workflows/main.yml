@@ -26,12 +26,12 @@ jobs:
       - name: Deploy Lambda functions
         if: contains(steps.changed-files.outputs.all_changed_files, 'Lambda_functions/')
         run: |
-          for modified_folder in $(echo .github/workflows/main.yml Lambda_functions/anymail/lambda_function.py | tr " " "\n" | grep '^Lambda_functions/'); do
+          for modified_folder in $(echo ${{ steps.changed-files.outputs.all_changed_files }} | tr " " "\n" | grep '^Lambda_functions/'); do
             function_folder="${modified_folder#*/}"  # Extract function folder name
             function_name=$(basename "$function_folder")
 
             # Zip the function code
-            zip -j "${function_name}.zip" "./$function_folder"/*
+            zip -r "${function_name}.zip" "./$function_folder"/*
 
             # Update the function code
             aws lambda update-function-code \

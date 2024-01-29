@@ -31,7 +31,7 @@ jobs:
             function_name=$(basename "$function_folder")
 
             # Zip the function code
-            zip -r "${function_name}.zip" -j "$function_folder"/*
+            zip -j "${function_name}.zip" ./"$function_folder"
 
             # Update the function code
             aws lambda update-function-code \

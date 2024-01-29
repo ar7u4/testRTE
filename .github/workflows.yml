@@ -1,0 +1,59 @@
+name: Deploy Lambda functions and layers
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Install AWS CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install awscli
+
+      - name: Deploy Lambda functions
+        if: github.event.commits[0].modified.paths.contains('Lambda_functions/**')
+        run: |
+          for function_folder in Lambda_functions/*; do
+            function_name=$(basename "$function_folder")
+            if [[ github.event.commits[0].modified.paths.contains("Lambda_functions/$function_name") ]]; then
+              zip -r "${function_name}.zip" "$function_folder"
+              aws lambda update-function-code \
+                --function-name "$function_name" \
+                --zip-file "fileb://${function_name}.zip"
+
+              # Get the new version number
+              new_version_number=$(aws lambda list-versions-by-function --function-name "$function_name" --max-items 1 --query 'Versions[0].Version' --output text)
+
+              # Update the "latest" alias to point to the new version
+              aws lambda update-alias \
+                --function-name "$function_name" \
+                --name "latest" \
+                --function-version "$new_version_number"
+            fi
+          done
+
+      - name: Deploy Lambda layer
+        if: contains(steps.modified_folders.outputs.modified_folders, 'AWS_Lambda_layer')
+        run: |
+          layer_version=$(aws lambda publish-layer-version \
+            --layer-name "my-lambda-layer" \
+            --zip-file "fileb://AWS_Lambda_layer/layer.zip" \
+            --compatible-runtimes python3.8 | jq -r '.LayerVersionArn')
+          for function_name in $(aws lambda list-functions --max-items 1000 --query 'Functions[*].FunctionName' --output text); do
+            aws lambda update-function-configuration \
+              --function-name "$function_name" \
+              --layers "$layer_version"
+          done
+

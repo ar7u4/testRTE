@@ -72,9 +72,9 @@ jobs:
             # Publish the layer
             layer_version=$(aws lambda publish-layer-version \
               --layer-name "rte-glb-layer" \
+              --description "My Python layer" \
               --zip-file "fileb://$recent_zip_file" \
-              --compatible-runtimes python3.10 | jq -r '.LayerVersionArn'
-              --description "Deployed from GitHub Actions v3")
+              --compatible-runtimes python3.10 | jq -r '.LayerVersionArn')
 
             # Output the LayerVersionArn
             echo "Layer Version Arn: $layer_version"

@@ -23,11 +23,11 @@ jobs:
           sudo apt-get install awscli
 
       - name: Deploy Lambda functions
-        if: github.event.commits[0].modified.paths.contains('Lambda_functions/**')
+        if: contains(github.event.commits[0].modified, 'Lambda_functions/')
         run: |
           for function_folder in Lambda_functions/*; do
             function_name=$(basename "$function_folder")
-            if [[ github.event.commits[0].modified.paths.contains("Lambda_functions/$function_name") ]]; then
+            if [[ "${{ github.event.commits[0].modified }}" == *"Lambda_functions/$function_name"* ]]; then
               zip -r "${function_name}.zip" "$function_folder"
               aws lambda update-function-code \
                 --function-name "$function_name" \
@@ -56,4 +56,3 @@ jobs:
               --function-name "$function_name" \
               --layers "$layer_version"
           done
-

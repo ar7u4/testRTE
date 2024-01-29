@@ -42,6 +42,8 @@ jobs:
               --function-name "$function_name" \
               --zip-file "fileb://${function_name}.zip"
 
+            aws lambda publish-version --function-name "$function_name"
+
             # Get the new version number
             new_version_number=$(aws lambda list-versions-by-function --function-name "$function_name" --max-items 1 --query 'Versions[0].Version' --output text)
             echo new_version_number

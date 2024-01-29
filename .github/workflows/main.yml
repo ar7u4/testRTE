@@ -74,7 +74,7 @@ jobs:
               --layer-name "rte-glb-layer" \
               --zip-file "fileb://$recent_zip_file" \
               --compatible-runtimes python3.10 | jq -r '.LayerVersionArn'
-              --description "Deployed from GitHub Actions - Commit: $commit_message - Version: ${GITHUB_RUN_NUMBER}"))
+              --description "Deployed from GitHub Actions - Commit: $commit_message - Version: ${GITHUB_RUN_NUMBER}")
 
             # Output the LayerVersionArn
             echo "Layer Version Arn: $layer_version"

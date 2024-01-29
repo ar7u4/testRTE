@@ -28,7 +28,9 @@ jobs:
         run: |
           for modified_folder in $(echo ${{ steps.changed-files.outputs.all_changed_files }} | tr " " "\n" | grep '^Lambda_functions/'); do
               function_folder="${modified_folder#*/}/"  # Include trailing slash to retain "anymail/"
+              echo $function_folder
               function_name=$(basename "$function_folder")  # Extract only "anymail"
+              echo $function_name
 
               # Zip the function code using the extracted folder path
               zip -r "${function_name}.zip" "$function_folder"

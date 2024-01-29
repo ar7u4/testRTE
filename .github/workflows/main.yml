@@ -18,15 +18,18 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
-
+          
+      - name: Install jq
+        run: sudo apt-get install jq
 
       - name: Get modified folders
         id: modified_folders
         run: |
-          echo "::set-output name=modified_folders::$(jq -r '.modified | keys | .[]' <<< "${{ toJSON(github.event.commits[0]) }}")"
+          modified_folders=$(jq -r '.modified | keys | .[]' <<< "${{ toJSON(github.event.commits[0]) }}")
+          echo "MODIFIED_FOLDERS=$modified_folders" >> $GITHUB_ENV
 
       - name: Deploy Lambda functions
-        if: contains(steps.modified_folders.outputs.modified_folders, 'Lambda_functions')
+        if: contains(env.MODIFIED_FOLDERS, 'Lambda_functions')
         run: |
           for modified_folder in ${{ steps.modified_folders.outputs.modified_folders }}; do
             if [[ $modified_folder == "Lambda_functions/*" ]]; then
@@ -53,7 +56,7 @@ jobs:
           done
 
       - name: Deploy Lambda layer
-        if: contains(steps.modified_folders.outputs.modified_folders, 'AWS_Lambda_layer')
+        if: contains(env.MODIFIED_FOLDERS, 'AWS_Lambda_layer')
         run: |
           # Publish the layer (assuming it's already zipped)
           layer_version=$(aws lambda publish-layer-version \

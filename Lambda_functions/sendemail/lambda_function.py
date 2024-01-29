@@ -6,7 +6,7 @@ def lambda_handler(event, context):
 
     response = {
         "statusCode": 200,
-        "body": json.dumps({"message": "DELETE request processed successfully"}),
+        "body": json.dumps({"message": "DELETE request v1 processed successfully"}),
     }
 
     return response

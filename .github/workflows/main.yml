@@ -75,15 +75,28 @@ jobs:
       - name: Deploy Lambda layer
         if: contains(steps.changed-files.outputs.all_changed_files, 'AWS_Lambda_layer/')
         run: |
-          # Publish the layer (assuming it's already zipped)
+          # Get the most recently pushed .zip file in the AWS_Lambda_layer/ folder
+          recent_zip_file=$(ls -1t AWS_Lambda_layer/*.zip | head -n 1)
+
+          # Check if a .zip file was found
+          if [ -z "$recent_zip_file" ]; then
+            echo "No .zip files found in AWS_Lambda_layer/ folder"
+            exit 1
+          fi
+
+          # Publish the layer
           layer_version=$(aws lambda publish-layer-version \
             --layer-name "rte-glb-layer" \
-            --zip-file "fileb://AWS_Lambda_layer/python.zip" \
+            --zip-file "fileb://$recent_zip_file" \
             --compatible-runtimes python3.10 | jq -r '.LayerVersionArn')
+
+          # Output the LayerVersionArn
+          echo "Layer Version Arn: $layer_version"
 
           # Update all functions with the new layer version
           for function_name in $(aws lambda list-functions --max-items 1000 --query 'Functions[*].FunctionName' --output text); do
             aws lambda update-function-configuration \
               --function-name "$function_name" \
               --layers "$layer_version"
-          }
+          done
+

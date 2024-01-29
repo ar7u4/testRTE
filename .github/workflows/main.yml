@@ -26,7 +26,7 @@ jobs:
       - name: Deploy Lambda functions
         if: contains(steps.changed-files.outputs.all_changed_files, 'Lambda_functions/')
         run: |
-          for modified_folder in $(echo ${{ steps.changed-files.outputs.all_changed_files }} | tr " " "\n" | grep '^Lambda_functions/'); do
+          for modified_folder in $(echo .github/workflows/main.yml Lambda_functions/anymail/lambda_function.py | tr " " "\n" | grep '^Lambda_functions/'); do
             function_folder="${modified_folder#*/}"  # Extract function folder name
             function_name=$(basename "$function_folder")
 
@@ -46,7 +46,7 @@ jobs:
               --function-name "$function_name" \
               --name "latest" \
               --function-version "$new_version_number"
-          }
+          done
 
   deploy-lambda-layer:
     runs-on: ubuntu-latest

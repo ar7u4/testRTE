@@ -44,11 +44,12 @@ jobs:
 
             # Get the new version number
             new_version_number=$(aws lambda list-versions-by-function --function-name "$function_name" --max-items 1 --query 'Versions[0].Version' --output text)
+            echo new_version_number
 
             # Update the "latest" alias to point to the new version
             aws lambda update-alias \
               --function-name "$function_name" \
-              --name "latest" \
+              --name "$function_name" \
               --function-version "$new_version_number"
           done
 

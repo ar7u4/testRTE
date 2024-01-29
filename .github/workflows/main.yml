@@ -31,7 +31,7 @@ jobs:
             function_name=$(basename "$function_folder")
 
             # Zip the function code
-            zip -r "${function_name}.zip" "$function_folder"
+            zip -r "${function_name}.zip" -j "$function_folder"/*
 
             # Update the function code
             aws lambda update-function-code \
@@ -47,6 +47,7 @@ jobs:
               --name "latest" \
               --function-version "$new_version_number"
           done
+
 
   deploy-lambda-layer:
     runs-on: ubuntu-latest

@@ -27,11 +27,13 @@ jobs:
         if: contains(steps.changed-files.outputs.all_changed_files, 'Lambda_functions/')
         run: |
           for modified_folder in $(echo ${{ steps.changed-files.outputs.all_changed_files }} | tr " " "\n" | grep '^Lambda_functions/'); do
-            function_folder="${modified_folder#*/}"  # Extract function folder name
-            function_name=$(basename "$function_folder")
+              function_folder="${modified_folder#Lambda_functions/}"  # Extract function folder name
+              function_name=$(basename "$function_folder")
 
-            # Zip the function code
-            zip -r "${function_name}.zip" "./$function_folder"/*
+              # Zip the function code
+              zip -r "${function_name}.zip" "./Lambda_functions/$function_folder"/*
+
+
 
             # Update the function code
             aws lambda update-function-code \

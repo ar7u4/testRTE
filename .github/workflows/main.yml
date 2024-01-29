@@ -51,9 +51,17 @@ jobs:
               --function-name "$function_name" \
               --layers "$layer_version"
           done
-          
+
       - name: Debug Output
         run: |
           echo "Modified Files: ${{ github.event.commits[0].modified }}"
-          echo "Changes in Lambda Functions: ${{ steps.lambda_changes.outputs.changes }}"
+          changes=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+          echo "Changes in Lambda Functions: $changes"
           echo "Changes in Layer: ${{ steps.layer_changes.outputs.changes }}"
+        shell: /usr/bin/bash -e {0}
+        env:
+          AWS_DEFAULT_REGION: ap-south-1
+          AWS_REGION: ap-south-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+

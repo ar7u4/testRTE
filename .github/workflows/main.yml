@@ -25,7 +25,7 @@ jobs:
       - name: Get modified folders
         id: modified_folders
         run: |
-          modified_folders=$(jq -r '.modified | keys | .[]' <<< "${{ toJSON(github.event.commits[0]) }}")
+          modified_folders=$(jq -r '.modified | keys_unsorted | .[]' <<< "${{ toJSON(github.event.commits[0]) }}")
           echo "MODIFIED_FOLDERS=$modified_folders" >> $GITHUB_ENV
 
       - name: Deploy Lambda functions

@@ -33,7 +33,7 @@ jobs:
               echo $function_name
 
               # Zip the function code using the extracted folder path
-              zip -r "${function_name}.zip" "$function_folder"
+              zip -j "${function_name}.zip" "$function_folder"/*
 
 
 

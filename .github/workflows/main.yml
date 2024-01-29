@@ -1,72 +1,85 @@
-name: Deploy Lambda functions and layers
+name: Deploy Lambda Functions and Layers
 
 on:
-  push:
-    branches: [main]  # Trigger on pushes to the main branch
-    paths:
-      - '**'  # Trigger for any change within the repository
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  deploy:
+  deploy-lambda-functions:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
+          aws-region: ap-south-1  # Update with your AWS region
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v42
+
+      - name: Deploy Lambda functions
+        if: contains(steps.changed-files.outputs.all_changed_files, 'Lambda_functions/')
+        run: |
+          for modified_folder in $(echo ${{ steps.changed-files.outputs.all_changed_files }} | tr " " "\n" | grep '^Lambda_functions/'); do
+            function_folder="${modified_folder#*/}"  # Extract function folder name
+            function_name=$(basename "$function_folder")
+
+            # Zip the function code
+            zip -r "${function_name}.zip" "$function_folder"
+
+            # Update the function code
+            aws lambda update-function-code \
+              --function-name "$function_name" \
+              --zip-file "fileb://${function_name}.zip"
+
+            # Get the new version number
+            new_version_number=$(aws lambda list-versions-by-function --function-name "$function_name" --max-items 1 --query 'Versions[0].Version' --output text)
+
+            # Update the "latest" alias to point to the new version
+            aws lambda update-alias \
+              --function-name "$function_name" \
+              --name "latest" \
+              --function-version "$new_version_number"
+          }
+
+  deploy-lambda-layer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1  # Update with your AWS region
 
       - name: Install jq
         run: sudo apt-get install jq
-
-      - name: Get modified folders
-        id: modified_folders
-        run: |
-          modified_folders=$(jq -r '.modified | keys_unsorted | .[]' <<< "${{ toJSON(github.event.commits[0]) }}")
-          echo "MODIFIED_FOLDERS=$modified_folders" >> $GITHUB_ENV
-
-      - name: Deploy Lambda functions
-        if: contains(env.MODIFIED_FOLDERS, 'Lambda_functions')
-        run: |
-          for modified_folder in ${{ steps.modified_folders.outputs.modified_folders }}; do
-            if [[ $modified_folder == "Lambda_functions/*" ]]; then
-              function_folder="${modified_folder#*/}"  # Extract function folder name
-              function_name=$(basename "$function_folder")
-
-              # Zip the function code
-              zip -r "${function_name}.zip" "$function_folder"
-
-              # Update the function code
-              aws lambda update-function-code \
-                --function-name "$function_name" \
-                --zip-file "fileb://${function_name}.zip"
-
-              # Get the new version number
-              new_version_number=$(aws lambda list-versions-by-function --function-name "$function_name" --max-items 1 --query 'Versions[0].Version' --output text)
-
-              # Update the "latest" alias to point to the new version
-              aws lambda update-alias \
-                --function-name "$function_name" \
-                --name "latest" \
-                --function-version "$new_version_number"
-            fi
-          done
+        
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v42
 
       - name: Deploy Lambda layer
-        if: contains(env.MODIFIED_FOLDERS, 'AWS_Lambda_layer')
+        if: contains(steps.changed-files.outputs.all_changed_files, 'AWS_Lambda_layer/')
         run: |
           # Publish the layer (assuming it's already zipped)
           layer_version=$(aws lambda publish-layer-version \
-            --layer-name "my-lambda-layer" \
-            --zip-file "fileb://AWS_Lambda_layer/layer.zip" \
-            --compatible-runtimes python3.8 | jq -r '.LayerVersionArn')
+            --layer-name "rte-glb-layer" \
+            --zip-file "fileb://AWS_Lambda_layer/python.zip" \
+            --compatible-runtimes python3.10 | jq -r '.LayerVersionArn')
 
           # Update all functions with the new layer version
           for function_name in $(aws lambda list-functions --max-items 1000 --query 'Functions[*].FunctionName' --output text); do
             aws lambda update-function-configuration \
               --function-name "$function_name" \
               --layers "$layer_version"
-          done
+          }

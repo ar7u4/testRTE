@@ -6,7 +6,7 @@ def lambda_handler(event, context):
 
     response = {
         "statusCode": 200,
-        "body": json.dumps({"message": "GET v12 request processed successfully"}),
+        "body": json.dumps({"message": "GET v13 request processed successfully"}),
     }
 
     return response

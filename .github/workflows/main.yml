@@ -1,7 +1,7 @@
 name: Deploy Lambda Functions and Layers
 
 on:
-  pull:
+  push:
     branches:
       - main
 

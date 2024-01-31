@@ -1,0 +1,86 @@
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- task: Checkout@1
+  displayName: Checkout repository
+
+- task: AWSShellScript@1
+  displayName: Configure AWS credentials
+  inputs:
+    awsCredentials: 'aws-credentials'  # Replace with your AWS service connection name
+    awsRegion: 'ap-south-1'  # Update with your AWS region
+
+- task: Bash@3
+  displayName: Install jq
+  inputs:
+    workingDirectory: '$(Build.SourcesDirectory)'
+    targetType: 'inline'
+    script: sudo apt-get install jq
+
+- task: PowerShell@2
+  displayName: Get changed files
+  inputs:
+    targetType: 'inline'
+    script: |
+      $changedFiles = git diff --name-only HEAD^ HEAD
+      Write-Host "##vso[task.setvariable variable=changedFiles;isOutput=true]$changedFiles"
+
+- task: Bash@3
+  displayName: Deploy Lambda functions
+  condition: in(dependencies.changed-files.outputs['changedFiles'], 'Lambda_functions/*')
+  inputs:
+    workingDirectory: '$(Build.SourcesDirectory)'
+    targetType: 'inline'
+    script: |
+      echo "Deploying Lambda Functions..."
+      for modified_folder in $(echo '${{ variables.changedFiles }}' | tr " " "\n" | grep '^Lambda_functions/'); do
+        function_folder=$(dirname "$modified_folder")
+        function_name=$(basename "$function_folder" | awk -F'/' '{print $(NF-1)}')
+
+        zip -j "${function_name}.zip" "$function_folder"/*
+
+        aws lambda update-function-code \
+          --function-name "$function_name" \
+          --zip-file "fileb://${function_name}.zip"
+
+        new_version_number=$(aws lambda publish-version --function-name "$function_name" --query 'Version' --output text)
+
+        aws lambda update-alias \
+          --function-name "$function_name" \
+          --name "$function_name" \
+          --function-version "$new_version_number"
+      done
+
+- task: Bash@3
+  displayName: Deploy Lambda Layer
+  condition: in(dependencies.changed-files.outputs['changedFiles'], 'AWS_Lambda_layer/*.zip')
+  inputs:
+    workingDirectory: '$(Build.SourcesDirectory)'
+    targetType: 'inline'
+    script: |
+      echo "Deploying Lambda Layer..."
+
+      recent_zip_file=$(ls -1t AWS_Lambda_layer/*.zip | head -n 1)
+
+      if [ -z "$recent_zip_file" ]; then
+        echo "No .zip files found in AWS_Lambda_layer/ folder"
+        exit 1
+      fi
+
+      layer_version=$(aws lambda publish-layer-version \
+        --layer-name "rte-glb-layer" \
+        --description "My Python layer" \
+        --zip-file "fileb://$recent_zip_file" \
+        --compatible-runtimes python3.10 | jq -r '.LayerVersionArn')
+
+      echo "Layer Version Arn: $layer_version"
+
+      for function_name in $(aws lambda list-functions --max-items 1000 --query 'Functions[*].FunctionName' --output text); do
+        aws lambda update-function-configuration \
+          --function-name "$function_name" \
+          --layers "$layer_version"
+      done

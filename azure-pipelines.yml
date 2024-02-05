@@ -1,0 +1,73 @@
+trigger:
+  - main
+
+pool:
+  vmImage: 'windows-latest'
+
+steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '3.x'
+      addToPath: true
+
+  - task: AWSShellScript@1
+    inputs:
+      awsCredentials: 'awsconfig'
+      regionName: 'ap-south-1'
+      scriptType: 'inline'
+      inlineScript: |
+        Write-Host "Deploying Lambda Functions..."
+              $modified_folders = git diff --name-only HEAD^..HEAD | Select-String '^src/Lambda_functions/'
+              foreach ($modified_folder in $modified_folders) {
+                $function_folder = Split-Path $modified_folder -Parent
+                Write-Host $function_folder
+                $function_name = (Split-Path $function_folder -Leaf).Split('/')[-1]
+                Write-Host $function_name
+        
+                # Zip the function code using the extracted folder path
+                Compress-Archive -Path "$function_folder/*" -DestinationPath "$function_name.zip" -Force
+        
+                # Update the function code
+                aws lambda update-function-code `
+                  --function-name $function_name `
+                  --zip-file "fileb://$function_name.zip"
+        
+                $new_version_number = aws lambda publish-version --function-name $function_name --query 'Version' --output text
+        
+                # Update the "latest" alias to point to the new version
+                aws lambda update-alias `
+                  --function-name $function_name `
+                  --name $function_name `
+                  --function-version $new_version_number
+              }
+            displayName: 'Deploy Lambda functions'
+        
+          - script: |
+              Write-Host "Deploying Lambda Layer..."
+        
+              # Get the most recently pushed .zip file in the src/AWS_Lambda_layer/ folder
+              $recent_zip_file = Get-ChildItem src/AWS_Lambda_layer/*.zip | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        
+              if (!$recent_zip_file) {
+                Write-Host "No .zip files found in src/AWS_Lambda_layer/ folder"
+                exit 1
+              }
+        
+              # Publish the layer
+              $layer_version = aws lambda publish-layer-version `
+                --layer-name "rte-glb-layer" `
+                --description "My Python layer" `
+                --zip-file "fileb://$($recent_zip_file.FullName)" `
+                --compatible-runtimes python3.10 | ConvertFrom-Json | Select-Object -ExpandProperty LayerVersionArn
+        
+              # Output the LayerVersionArn
+              Write-Host "Layer Version Arn: $layer_version"
+        
+              # Update all functions with the new layer version
+              $function_names = aws lambda list-functions --max-items 1000 --query 'Functions[*].FunctionName' --output text
+              foreach ($function_name in $function_names) {
+                aws lambda update-function-configuration `
+                  --function-name $function_name `
+                  --layers $layer_version
+              }
+            displayName: 'Deploy Lambda Layer'

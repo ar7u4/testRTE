@@ -4,8 +4,7 @@ trigger:
       - main
 
 jobs:
-- job: deploy-functions
-  displayName: Deploy Lambda Functions
+- job: deployfunction
   pool:
     vmImage: 'ubuntu-latest'
 

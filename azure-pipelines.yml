@@ -4,83 +4,54 @@ trigger:
       - main
 
 jobs:
-- job: deploy
-  displayName: Deploy_Lambda_Functions
+- job: deploy-functions
+  displayName: Deploy Lambda Functions
   pool:
     vmImage: 'ubuntu-latest'
 
   steps:
-  - checkout: self
-
   - task: UsePythonVersion@0
     inputs:
       versionSpec: '3.x'
       addToPath: true
 
   - task: AWSShellScript@1
+    displayName: 'Configure AWS credentials'
     inputs:
       awsCredentials: 'awsconfig'
-      regionName: 'ap-south-1'
-      scriptType: 'inline'
-      inlineScript: |
-        # Get changed files
-              changed_files=$(git diff-tree --no-commit-id --name-only -r ${{ variables['Build.SourceVersion'] }})
-        
-              # Deploy Lambda functions
-              if echo "$changed_files" | grep -q 'Lambda_functions/'; then
-                echo "Deploying Lambda Functions..."
-                for modified_folder in $(echo "$changed_files" | tr " " "\n" | grep '^Lambda_functions/'); do
-                  function_folder=$(dirname "$modified_folder")
-                  echo $function_folder
-                  function_name=$(basename "$function_folder" | awk -F'/' '{print $(NF-1)}')  # Extract only "anymail"
-                  echo $function_name
-        
-                  # Zip the function code using the extracted folder path
-                  zip -j "${function_name}.zip" "$function_folder"/*
-        
-                  # Update the function code
-                  aws lambda update-function-code \
-                    --function-name "$function_name" \
-                    --zip-file "fileb://${function_name}.zip"
-        
-                  new_version_number=$(aws lambda publish-version --function-name "$function_name" --query 'Version' --output text)
-        
-                  # Update the "latest" alias to point to the new version
-                  aws lambda update-alias \
-                    --function-name "$function_name" \
-                    --name "$function_name" \
-                    --function-version "$new_version_number"
-                done
-              fi
-        
-              # Deploy Lambda Layer
-              if echo "$changed_files" | grep -q 'AWS_Lambda_layer/'; then
-                echo "Deploying Lambda Layer..."
-        
-                # Get the most recently pushed .zip file in the AWS_Lambda_layer/ folder
-                recent_zip_file=$(ls -1t AWS_Lambda_layer/*.zip | head -n 1)
-        
-                # Check if a .zip file was found
-                if [ -z "$recent_zip_file" ]; then
-                  echo "No .zip files found in AWS_Lambda_layer/ folder"
-                  exit 1
-                fi
-        
-                # Publish the layer
-                layer_version=$(aws lambda publish-layer-version \
-                  --layer-name "rte-glb-layer" \
-                  --description "My Python layer" \
-                  --zip-file "fileb://$recent_zip_file" \
-                  --compatible-runtimes python3.10 | jq -r '.LayerVersionArn')
-        
-                # Output the LayerVersionArn
-                echo "Layer Version Arn: $layer_version"
-        
-                # Update all functions with the new layer version
-                for function_name in $(aws lambda list-functions --max-items 1000 --query 'Functions[*].FunctionName' --output text); do
-                  aws lambda update-function-configuration \
-                    --function-name "$function_name" \
-                    --layers "$layer_version"
-                done
-              fi
-            displayName: 'Deploy Lambda Functions and Layer'
+      regionName: 'ap-south-1' # Update with your AWS region
+
+  - script: |
+      pip install awscli
+      aws configure set aws_access_key_id $(AWS_ACCESS_KEY_ID)
+      aws configure set aws_secret_access_key $(AWS_SECRET_ACCESS_KEY)
+      aws configure set region $(AWS_REGION)
+    displayName: 'Install AWS CLI and configure credentials'
+
+  - script: |
+      if [[ $(git diff --name-only HEAD^ HEAD | grep -q 'Lambda_functions/'; echo $?) -eq 0 ]]; then
+        echo "Deploying Lambda Functions..."
+        for modified_folder in $(git diff --name-only HEAD^ HEAD | grep '^Lambda_functions/' | xargs -I {} dirname {} | sort -u); do
+          function_folder=$(basename "$modified_folder")
+          echo $function_folder
+          function_name=$(basename "$function_folder")
+          echo $function_name
+
+          # Zip the function code using the extracted folder path
+          zip -j "${function_name}.zip" "$function_folder"/*
+
+          # Update the function code
+          aws lambda update-function-code \
+            --function-name "$function_name" \
+            --zip-file "fileb://${function_name}.zip"
+
+          new_version_number=$(aws lambda publish-version --function-name "$function_name" --query 'Version' --output text)
+
+          # Update the "latest" alias to point to the new version
+          aws lambda update-alias \
+            --function-name "$function_name" \
+            --name "latest" \
+            --function-version "$new_version_number"
+        done
+      fi
+    displayName: 'Deploy Lambda Functions'

@@ -1,10 +1,17 @@
 trigger:
-  - main
+  branches:
+    include:
+      - main
 
-pool:
-  vmImage: 'windows-latest'
+jobs:
+- job: deploy-functions-and-layers
+  displayName: Deploy Lambda Functions and Layers
+  pool:
+    vmImage: 'ubuntu-latest'
 
-steps:
+  steps:
+  - checkout: self
+
   - task: UsePythonVersion@0
     inputs:
       versionSpec: '3.x'
@@ -16,58 +23,64 @@ steps:
       regionName: 'ap-south-1'
       scriptType: 'inline'
       inlineScript: |
-        Write-Host "Deploying Lambda Functions..."
-              $modified_folders = git diff --name-only HEAD^..HEAD | Select-String '^src/Lambda_functions/'
-              foreach ($modified_folder in $modified_folders) {
-                $function_folder = Split-Path $modified_folder -Parent
-                Write-Host $function_folder
-                $function_name = (Split-Path $function_folder -Leaf).Split('/')[-1]
-                Write-Host $function_name
+        # Get changed files
+              changed_files=$(git diff-tree --no-commit-id --name-only -r ${{ variables['Build.SourceVersion'] }})
         
-                # Zip the function code using the extracted folder path
-                Compress-Archive -Path "$function_folder/*" -DestinationPath "$function_name.zip" -Force
+              # Deploy Lambda functions
+              if echo "$changed_files" | grep -q 'Lambda_functions/'; then
+                echo "Deploying Lambda Functions..."
+                for modified_folder in $(echo "$changed_files" | tr " " "\n" | grep '^Lambda_functions/'); do
+                  function_folder=$(dirname "$modified_folder")
+                  echo $function_folder
+                  function_name=$(basename "$function_folder" | awk -F'/' '{print $(NF-1)}')  # Extract only "anymail"
+                  echo $function_name
         
-                # Update the function code
-                aws lambda update-function-code `
-                  --function-name $function_name `
-                  --zip-file "fileb://$function_name.zip"
+                  # Zip the function code using the extracted folder path
+                  zip -j "${function_name}.zip" "$function_folder"/*
         
-                $new_version_number = aws lambda publish-version --function-name $function_name --query 'Version' --output text
+                  # Update the function code
+                  aws lambda update-function-code \
+                    --function-name "$function_name" \
+                    --zip-file "fileb://${function_name}.zip"
         
-                # Update the "latest" alias to point to the new version
-                aws lambda update-alias `
-                  --function-name $function_name `
-                  --name $function_name `
-                  --function-version $new_version_number
-              }
-            displayName: 'Deploy Lambda functions'
+                  new_version_number=$(aws lambda publish-version --function-name "$function_name" --query 'Version' --output text)
         
-          - script: |
-              Write-Host "Deploying Lambda Layer..."
+                  # Update the "latest" alias to point to the new version
+                  aws lambda update-alias \
+                    --function-name "$function_name" \
+                    --name "$function_name" \
+                    --function-version "$new_version_number"
+                done
+              fi
         
-              # Get the most recently pushed .zip file in the src/AWS_Lambda_layer/ folder
-              $recent_zip_file = Get-ChildItem src/AWS_Lambda_layer/*.zip | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+              # Deploy Lambda Layer
+              if echo "$changed_files" | grep -q 'AWS_Lambda_layer/'; then
+                echo "Deploying Lambda Layer..."
         
-              if (!$recent_zip_file) {
-                Write-Host "No .zip files found in src/AWS_Lambda_layer/ folder"
-                exit 1
-              }
+                # Get the most recently pushed .zip file in the AWS_Lambda_layer/ folder
+                recent_zip_file=$(ls -1t AWS_Lambda_layer/*.zip | head -n 1)
         
-              # Publish the layer
-              $layer_version = aws lambda publish-layer-version `
-                --layer-name "rte-glb-layer" `
-                --description "My Python layer" `
-                --zip-file "fileb://$($recent_zip_file.FullName)" `
-                --compatible-runtimes python3.10 | ConvertFrom-Json | Select-Object -ExpandProperty LayerVersionArn
+                # Check if a .zip file was found
+                if [ -z "$recent_zip_file" ]; then
+                  echo "No .zip files found in AWS_Lambda_layer/ folder"
+                  exit 1
+                fi
         
-              # Output the LayerVersionArn
-              Write-Host "Layer Version Arn: $layer_version"
+                # Publish the layer
+                layer_version=$(aws lambda publish-layer-version \
+                  --layer-name "rte-glb-layer" \
+                  --description "My Python layer" \
+                  --zip-file "fileb://$recent_zip_file" \
+                  --compatible-runtimes python3.10 | jq -r '.LayerVersionArn')
         
-              # Update all functions with the new layer version
-              $function_names = aws lambda list-functions --max-items 1000 --query 'Functions[*].FunctionName' --output text
-              foreach ($function_name in $function_names) {
-                aws lambda update-function-configuration `
-                  --function-name $function_name `
-                  --layers $layer_version
-              }
-            displayName: 'Deploy Lambda Layer'
+                # Output the LayerVersionArn
+                echo "Layer Version Arn: $layer_version"
+        
+                # Update all functions with the new layer version
+                for function_name in $(aws lambda list-functions --max-items 1000 --query 'Functions[*].FunctionName' --output text); do
+                  aws lambda update-function-configuration \
+                    --function-name "$function_name" \
+                    --layers "$layer_version"
+                done
+              fi
+            displayName: 'Deploy Lambda Functions and Layer'
